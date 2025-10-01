@@ -1,0 +1,11 @@
+import { faker } from '@faker-js/faker';
+import { Product } from '../types';
+
+// --- MOCK PRODUCTS ---
+// A lista de produtos disponíveis para adicionar aos lotes ainda é mockada.
+// Podemos criar uma tela de gerenciamento para eles no futuro.
+export const mockProducts: Product[] = Array.from({ length: 25 }, () => ({
+  id: faker.string.uuid(),
+  name: faker.commerce.productName(),
+  productionTime: faker.number.int({ min: 30, max: 480 }), // 30 mins to 8 hours
+}));

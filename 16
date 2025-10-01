@@ -1,0 +1,37 @@
+export interface Product {
+  id: string;
+  name: string;
+  production_time: number; // in minutes
+  input_usage: number; // in kg
+}
+
+export interface LotProduct extends Product {
+  lot_product_id: number; // The ID from the lot_products join table
+  quantity: number;
+  completed_quantity: number;
+  real_input_usage: number; // The actual input used for the completed items
+}
+
+export const LOT_STATUSES = ['Planejado', 'Em Produção', 'Concluído'] as const;
+export type LotStatus = typeof LOT_STATUSES[number];
+
+export interface Employee {
+  id: string;
+  name: string;
+}
+
+export interface Lot {
+  id: string;
+  name: string;
+  products: LotProduct[];
+  status: LotStatus;
+  startDate: Date;
+  estimatedDeliveryDate: Date;
+  totalProductionTime: number; // in minutes
+  totalInputUsage: number; // in kg
+  totalTimeSpent: number; // in minutes, based on completed items
+  totalInputUsed: number; // in kg, based on REAL usage input
+  employeeId?: string;
+  totalItems: number;
+  totalCompletedItems: number;
+}

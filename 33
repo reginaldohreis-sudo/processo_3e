@@ -1,0 +1,92 @@
+import React, { useEffect } from 'react';
+import Modal from './Modal';
+import { Product } from '../types';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import * as z from 'zod';
+
+const schema = z.object({
+  name: z.string().min(3, "O nome deve ter pelo menos 3 caracteres."),
+  production_time: z.number().min(0, "O tempo de produção não pode ser negativo."),
+  input_usage: z.number().min(0, "O insumo gasto não pode ser negativo."),
+});
+
+type FormData = z.infer<typeof schema>;
+
+interface ProductFormModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onSave: (data: FormData) => void;
+  existingProduct?: Product | null;
+}
+
+const ProductFormModal: React.FC<ProductFormModalProps> = ({ isOpen, onClose, onSave, existingProduct }) => {
+  const { register, handleSubmit, reset, formState: { errors } } = useForm<FormData>({
+    resolver: zodResolver(schema),
+  });
+
+  useEffect(() => {
+    if (isOpen) {
+      if (existingProduct) {
+        reset({
+          name: existingProduct.name,
+          production_time: existingProduct.production_time,
+          input_usage: existingProduct.input_usage,
+        });
+      } else {
+        reset({ name: '', production_time: 0, input_usage: 0 });
+      }
+    }
+  }, [isOpen, existingProduct, reset]);
+
+  const processSubmit = (data: FormData) => {
+    onSave(data);
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title={existingProduct ? 'Editar Produto' : 'Adicionar Produto'} size="lg">
+      <form onSubmit={handleSubmit(processSubmit)} className="space-y-4">
+        <div>
+          <label htmlFor="name" className="block text-sm font-medium text-gray-300">Nome do Produto</label>
+          <input {...register('name')} id="name" className="mt-1 block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm text-white p-2" />
+          {errors.name && <p className="text-red-400 text-xs mt-1">{errors.name.message}</p>}
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label htmlFor="production_time" className="block text-sm font-medium text-gray-300">Tempo de Produção (minutos)</label>
+            <input 
+              {...register('production_time', { valueAsNumber: true })} 
+              id="production_time" 
+              type="number" 
+              step="any"
+              className="mt-1 block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm text-white p-2" 
+            />
+            {errors.production_time && <p className="text-red-400 text-xs mt-1">{errors.production_time.message}</p>}
+          </div>
+          <div>
+            <label htmlFor="input_usage" className="block text-sm font-medium text-gray-300">Insumo Gasto (kg)</label>
+            <input 
+              {...register('input_usage', { valueAsNumber: true })} 
+              id="input_usage" 
+              type="number" 
+              step="any"
+              className="mt-1 block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm text-white p-2" 
+            />
+            {errors.input_usage && <p className="text-red-400 text-xs mt-1">{errors.input_usage.message}</p>}
+          </div>
+        </div>
+        
+        <div className="flex justify-end gap-2 pt-4 border-t border-gray-700">
+          <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-600 text-white font-semibold rounded-lg hover:bg-gray-500 transition-colors">
+            Cancelar
+          </button>
+          <button type="submit" className="px-4 py-2 bg-blue-500 text-white font-semibold rounded-lg hover:bg-blue-600 transition-colors">
+            Salvar Produto
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+};
+
+export default ProductFormModal;

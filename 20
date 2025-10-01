@@ -1,0 +1,37 @@
+import { NavLink } from 'react-router-dom';
+import { cn } from '../lib/utils';
+
+const Header: React.FC = () => {
+    
+  const navLinkClasses = ({ isActive }: { isActive: boolean }) =>
+    cn(
+      'px-3 py-2 rounded-md text-sm font-medium transition-colors',
+      isActive
+        ? 'bg-gray-700 text-white'
+        : 'text-gray-400 hover:bg-gray-700/50 hover:text-white'
+    );
+
+  return (
+    <header className="bg-gray-800/50 backdrop-blur-sm sticky top-0 z-20 border-b border-gray-700">
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between h-16">
+          <div className="flex items-center gap-8">
+            <h1 className="text-xl font-bold text-white">ProdManager</h1>
+            <nav className="flex items-center gap-2">
+                <NavLink to="/" className={navLinkClasses}>Dashboard</NavLink>
+                <NavLink to="/products" className={navLinkClasses}>Produtos</NavLink>
+                <NavLink to="/employees" className={navLinkClasses}>Funcionários</NavLink>
+            </nav>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="w-10 h-10 bg-gray-600 rounded-full flex items-center justify-center text-white font-bold">
+              DA
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
+  );
+};
+
+export default Header;

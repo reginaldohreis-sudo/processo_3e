@@ -1,0 +1,91 @@
+import React, { useState } from 'react';
+import { Product } from '../types';
+import { Package, Edit, Trash2, Plus } from 'lucide-react';
+import ProductFormModal from '../components/ProductFormModal';
+import { formatMinutes } from '../lib/utils';
+
+interface ProductsPageProps {
+  products: Product[];
+  onSave: (productData: Omit<Product, 'id'>, editingProductId: string | null) => Promise<void>;
+  onDelete: (productId: string) => Promise<void>;
+}
+
+const ProductsPage: React.FC<ProductsPageProps> = ({ products, onSave, onDelete }) => {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+
+  const handleOpenModal = (product: Product | null = null) => {
+    setEditingProduct(product);
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setEditingProduct(null);
+    setIsModalOpen(false);
+  };
+
+  const handleSave = async (data: Omit<Product, 'id'>) => {
+    await onSave(data, editingProduct?.id || null);
+    handleCloseModal();
+  };
+
+  return (
+    <div className="space-y-8">
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold text-white">Gerenciar Produtos</h2>
+        <button
+          onClick={() => handleOpenModal()}
+          className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white font-semibold px-4 py-2 rounded-lg transition-colors"
+        >
+          <Plus size={20} />
+          Adicionar Produto
+        </button>
+      </div>
+
+      <div className="bg-gray-800 border border-gray-700 rounded-xl">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-left text-gray-400">
+            <thead className="text-xs text-gray-400 uppercase bg-gray-700/50">
+              <tr>
+                <th scope="col" className="px-6 py-3">Produto</th>
+                <th scope="col" className="px-6 py-3 text-center">Tempo de Produção</th>
+                <th scope="col" className="px-6 py-3 text-center">Insumo Gasto (kg)</th>
+                <th scope="col" className="px-6 py-3 text-right">Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {products.map(product => (
+                <tr key={product.id} className="border-b border-gray-700 hover:bg-gray-700/30">
+                  <th scope="row" className="px-6 py-4 font-medium text-gray-200 whitespace-nowrap">
+                    {product.name}
+                  </th>
+                  <td className="px-6 py-4 text-center">{formatMinutes(product.production_time)}</td>
+                  <td className="px-6 py-4 text-center">{product.input_usage.toLocaleString('pt-BR')} kg</td>
+                  <td className="px-6 py-4 text-right space-x-2">
+                    <button onClick={() => handleOpenModal(product)} className="p-2 text-gray-400 hover:text-blue-400"><Edit size={16} /></button>
+                    <button onClick={() => onDelete(product.id)} className="p-2 text-gray-400 hover:text-red-400"><Trash2 size={16} /></button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {products.length === 0 && (
+            <div className="text-center py-16">
+                <Package size={40} className="mx-auto text-gray-600" />
+                <p className="mt-2 text-gray-500">Nenhum produto cadastrado.</p>
+            </div>
+        )}
+      </div>
+
+      <ProductFormModal
+        isOpen={isModalOpen}
+        onClose={handleCloseModal}
+        onSave={handleSave}
+        existingProduct={editingProduct}
+      />
+    </div>
+  );
+};
+
+export default ProductsPage;

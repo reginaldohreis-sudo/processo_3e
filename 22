@@ -1,0 +1,39 @@
+import React from 'react';
+import { Lot, LotStatus, Employee } from '../types';
+import LotItem from './LotItem';
+
+interface LotListProps {
+  lots: Lot[];
+  employees: Employee[];
+  onView: (lot: Lot) => void;
+  onEdit: (lot: Lot) => void;
+  onUpdateStatus: (lotId: string, status: LotStatus) => void;
+}
+
+const LotList: React.FC<LotListProps> = ({ lots, employees, onView, onEdit, onUpdateStatus }) => {
+  return (
+    <>
+      {lots.length > 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+          {lots.map(lot => (
+            <LotItem
+              key={lot.id}
+              lot={lot}
+              employees={employees}
+              onView={onView}
+              onEdit={onEdit}
+              onUpdateStatus={onUpdateStatus}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="text-center py-20">
+            <h2 className="text-2xl font-semibold text-gray-400">Nenhum lote encontrado.</h2>
+            <p className="text-gray-500 mt-2">Comece criando um novo lote para gerenciar sua produção.</p>
+        </div>
+      )}
+    </>
+  );
+};
+
+export default LotList;

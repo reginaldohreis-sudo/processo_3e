@@ -1,0 +1,314 @@
+import React, { useState, useEffect } from 'react';
+import Modal from './Modal';
+import { Lot, Employee } from '../types';
+import { format } from 'date-fns';
+import { formatMinutes } from '../lib/utils';
+import { Calendar, Clock, Package, User, Download, Zap, Save } from 'lucide-react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { Chart, registerables, ChartConfiguration } from 'chart.js';
+Chart.register(...registerables);
+
+
+interface ViewLotModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  lot: Lot;
+  employees: Employee[];
+  onUpdateProgress: (updates: { id: number; completed_quantity: number; real_input_usage: number }[]) => Promise<void>;
+}
+
+type ProgressState = Record<number, { completed_quantity: number; real_input_usage: number }>;
+
+const ViewLotModal: React.FC<ViewLotModalProps> = ({ isOpen, onClose, lot, employees, onUpdateProgress }) => {
+  const [progress, setProgress] = useState<ProgressState>({});
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (lot) {
+      const initialProgress = lot.products.reduce((acc, p) => {
+        acc[p.lot_product_id] = {
+            completed_quantity: p.completed_quantity,
+            real_input_usage: p.real_input_usage
+        };
+        return acc;
+      }, {} as ProgressState);
+      setProgress(initialProgress);
+    }
+  }, [lot]);
+
+  const assignedEmployee = employees.find(e => e.id === lot.employeeId);
+
+  const handleProgressChange = (lotProductId: number, field: 'completed_quantity' | 'real_input_usage', value: string, max?: number) => {
+    const numValue = field === 'completed_quantity' ? parseInt(value, 10) : parseFloat(value);
+    
+    if (!isNaN(numValue)) {
+      let finalValue = numValue;
+      if (field === 'completed_quantity' && max !== undefined) {
+        finalValue = Math.max(0, Math.min(max, finalValue));
+      } else {
+        finalValue = Math.max(0, finalValue);
+      }
+      
+      setProgress(prev => ({
+        ...prev,
+        [lotProductId]: {
+          ...prev[lotProductId],
+          [field]: finalValue
+        }
+      }));
+    } else if (value === '') {
+       setProgress(prev => ({ ...prev, [lotProductId]: { ...prev[lotProductId], [field]: 0 } }));
+    }
+  };
+
+  const handleSaveProgress = async () => {
+    setIsSaving(true);
+    const updates = Object.entries(progress)
+      .map(([lot_product_id, values]) => ({
+        id: Number(lot_product_id),
+        completed_quantity: values.completed_quantity,
+        real_input_usage: values.real_input_usage,
+      }));
+    await onUpdateProgress(updates);
+    setIsSaving(false);
+    onClose();
+  };
+
+  const handleExportPDF = () => {
+    const doc = new jsPDF();
+    
+    // Título
+    doc.setFontSize(18);
+    doc.text(`Relatório do Lote: ${lot.name}`, 14, 22);
+    doc.setFontSize(11);
+    doc.setTextColor(100);
+    doc.text(`Gerado em: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`, 14, 28);
+
+    // Informações gerais
+    autoTable(doc, {
+        startY: 35,
+        head: [['Informação', 'Detalhe']],
+        body: [
+            ['Status', lot.status],
+            ['Responsável', assignedEmployee?.name || 'Não atribuído'],
+            ['Data de Início', format(lot.startDate, 'dd/MM/yyyy')],
+            ['Entrega Estimada', format(lot.estimatedDeliveryDate, 'dd/MM/yyyy')],
+        ],
+        theme: 'grid',
+        headStyles: { fillColor: [44, 62, 80] },
+    });
+
+    // Totais
+    autoTable(doc, {
+        startY: (doc as any).lastAutoTable.finalY + 10,
+        head: [['Métrica', 'Valor']],
+        body: [
+            ['Itens (Concluídos / Total)', `${lot.totalCompletedItems} / ${lot.totalItems} un.`],
+            ['Tempo Gasto / Total', `${formatMinutes(lot.totalTimeSpent)} / ${formatMinutes(lot.totalProductionTime)}`],
+            ['Insumo Gasto (Real / Total)', `${lot.totalInputUsed.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} / ${lot.totalInputUsage.toLocaleString('pt-BR')} kg`],
+        ],
+        theme: 'grid',
+        headStyles: { fillColor: [44, 62, 80] },
+    });
+
+    // Tabela de produtos
+    autoTable(doc, {
+      startY: (doc as any).lastAutoTable.finalY + 10,
+      head: [['Produto', 'Qtde. Total', 'Qtde. Concluída', 'Insumo Real (kg)']],
+      body: lot.products.map(p => [
+        p.name,
+        p.quantity,
+        p.completed_quantity,
+        p.real_input_usage.toLocaleString('pt-BR', { maximumFractionDigits: 2 }),
+      ]),
+      theme: 'striped',
+      headStyles: { fillColor: [44, 62, 80] },
+    });
+
+    // --- Geração de Gráfico ---
+    const generateChartImage = (canvasId: string, config: ChartConfiguration): string => {
+        const canvas = document.createElement('canvas');
+        canvas.id = canvasId;
+        canvas.width = 800;
+        canvas.height = 400;
+        canvas.style.display = 'none';
+        document.body.appendChild(canvas);
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+            document.body.removeChild(canvas);
+            return '';
+        }
+
+        const chart = new Chart(ctx, config);
+        const dataUrl = chart.toBase64Image();
+        chart.destroy();
+        document.body.removeChild(canvas);
+        return dataUrl;
+    };
+
+    const theoreticalInputUsed = lot.products.reduce((acc, p) => acc + (p.input_usage * p.completed_quantity), 0);
+    
+    const lineChartConfig: ChartConfiguration = {
+        type: 'line',
+        data: {
+            datasets: [
+                {
+                    label: 'Relação Prevista',
+                    data: [{ x: 0, y: 0 }, { x: lot.totalProductionTime, y: lot.totalInputUsage }],
+                    borderColor: 'rgba(54, 162, 235, 0.8)',
+                    backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                    tension: 0,
+                    borderDash: [5, 5],
+                },
+                {
+                    label: 'Gasto Teórico',
+                    data: [{ x: 0, y: 0 }, { x: lot.totalTimeSpent, y: theoreticalInputUsed }],
+                    borderColor: 'rgba(255, 206, 86, 0.8)',
+                    backgroundColor: 'rgba(255, 206, 86, 0.2)',
+                    tension: 0,
+                },
+                {
+                    label: 'Gasto Real',
+                    data: [{ x: 0, y: 0 }, { x: lot.totalTimeSpent, y: lot.totalInputUsed }],
+                    borderColor: 'rgba(75, 192, 192, 0.8)',
+                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                    tension: 0,
+                }
+            ]
+        },
+        options: {
+            responsive: false,
+            animation: { duration: 0 },
+            scales: {
+                x: {
+                    type: 'linear',
+                    position: 'bottom',
+                    title: { display: true, text: 'Tempo (minutos)' },
+                    beginAtZero: true,
+                },
+                y: {
+                    beginAtZero: true,
+                    title: { display: true, text: 'Insumo (kg)' }
+                }
+            },
+            plugins: {
+                title: { display: true, text: 'Análise de Desempenho: Tempo vs. Insumo', font: { size: 16 } },
+                legend: { position: 'top' },
+            }
+        }
+    };
+
+    const lineChartImage = generateChartImage('lineChartCanvas', lineChartConfig);
+
+    doc.addPage();
+    doc.setFontSize(16);
+    doc.text('Gráfico de Desempenho', 14, 22);
+    
+    if (lineChartImage) {
+        doc.addImage(lineChartImage, 'PNG', 15, 30, 180, 90);
+    }
+
+    doc.save(`Relatorio-${lot.name.replace(/ /g, '_')}.pdf`);
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title={`Detalhes do Lote: ${lot.name}`} size="xl">
+      <div className="space-y-6 text-gray-300">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+             <div className="flex items-center gap-3 bg-gray-700/50 p-3 rounded-lg">
+              <User className="text-cyan-400" size={20} />
+              <div>
+                <span className="text-gray-400">Responsável:</span>
+                <p className="font-semibold text-white">{assignedEmployee?.name || 'Não atribuído'}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 bg-gray-700/50 p-3 rounded-lg">
+              <Zap className="text-orange-400" size={20} />
+              <div>
+                <span className="text-gray-400">Insumo Gasto (Real / Total):</span>
+                <p className="font-semibold text-white">{lot.totalInputUsed.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} / {lot.totalInputUsage.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} kg</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 bg-gray-700/50 p-3 rounded-lg">
+              <Clock className="text-purple-400" size={20} />
+              <div>
+                <span className="text-gray-400">Tempo Gasto / Total:</span>
+                <p className="font-semibold text-white">{formatMinutes(lot.totalTimeSpent)} / {formatMinutes(lot.totalProductionTime)}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 bg-gray-700/50 p-3 rounded-lg">
+              <Calendar className="text-green-400" size={20} />
+              <div>
+                <span className="text-gray-400">Entrega Estimada:</span>
+                <p className="font-semibold text-white">{format(lot.estimatedDeliveryDate, 'dd/MM/yyyy')}</p>
+              </div>
+            </div>
+          </div>
+
+        <div>
+          <h4 className="font-semibold text-white mb-3 flex items-center gap-2">
+            <Package size={18} />
+            Progresso dos Produtos
+          </h4>
+          <div className="border border-gray-700 rounded-lg max-h-60 overflow-y-auto">
+            <table className="w-full text-sm text-left">
+              <thead className="bg-gray-700 text-xs text-gray-400 uppercase sticky top-0">
+                <tr>
+                  <th className="px-4 py-2">Produto</th>
+                  <th className="px-4 py-2 text-center">Progresso (un)</th>
+                  <th className="px-4 py-2 text-center">Insumo Real (kg)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-700">
+                {lot.products.map(p => (
+                  <tr key={p.lot_product_id} className="hover:bg-gray-700/50">
+                    <td className="px-4 py-3 font-medium text-gray-200">{p.name}</td>
+                    <td className="px-4 py-3 text-center">
+                      <input
+                        type="number"
+                        value={progress[p.lot_product_id]?.completed_quantity ?? 0}
+                        onChange={(e) => handleProgressChange(p.lot_product_id, 'completed_quantity', e.target.value, p.quantity)}
+                        className="w-20 bg-gray-900 border-gray-600 rounded-md p-1 text-center text-white"
+                        min="0"
+                        max={p.quantity}
+                      />
+                      <span className="text-gray-400 ml-2">/ {p.quantity}</span>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <input
+                        type="number"
+                        step="any"
+                        value={progress[p.lot_product_id]?.real_input_usage ?? 0}
+                        onChange={(e) => handleProgressChange(p.lot_product_id, 'real_input_usage', e.target.value)}
+                        className="w-24 bg-gray-900 border-gray-600 rounded-md p-1 text-center text-white"
+                        min="0"
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div className="p-4 border-t border-gray-700 mt-4 flex justify-between items-center">
+        <button onClick={handleExportPDF} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-semibold px-4 py-2 rounded-lg transition-colors">
+          <Download size={18} />
+          Exportar PDF
+        </button>
+        <button 
+          onClick={handleSaveProgress}
+          disabled={isSaving}
+          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold px-4 py-2 rounded-lg transition-colors disabled:bg-gray-500"
+        >
+          <Save size={18} />
+          {isSaving ? 'Salvando...' : 'Salvar Progresso'}
+        </button>
+      </div>
+    </Modal>
+  );
+};
+
+export default ViewLotModal;

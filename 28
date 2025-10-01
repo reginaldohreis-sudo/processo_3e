@@ -1,0 +1,139 @@
+import React, { useState } from 'react';
+import { Employee, Lot } from '../types';
+import { UserPlus, User, Trash2, ChevronDown, Package, Clock } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import StatusBadge from '../components/StatusBadge';
+import { format } from 'date-fns';
+
+interface EmployeesPageProps {
+  employees: Employee[];
+  lots: Lot[];
+  onAddEmployee: (name: string) => Promise<void>;
+  onDeleteEmployee: (employeeId: string) => Promise<void>;
+}
+
+const EmployeeItem: React.FC<{ employee: Employee, lots: Lot[], onDelete: (id: string) => void }> = ({ employee, lots, onDelete }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const assignedLots = lots.filter(lot => lot.employeeId === employee.id);
+
+    return (
+        <li className="bg-gray-700/50 rounded-lg transition-all">
+            <div 
+                className="flex items-center gap-3 p-3 cursor-pointer"
+                onClick={() => setIsOpen(!isOpen)}
+            >
+                <div className="w-8 h-8 bg-gray-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
+                    {employee.name.charAt(0).toUpperCase()}
+                </div>
+                <span className="font-medium text-gray-200 flex-grow">{employee.name}</span>
+                <span className="text-xs text-gray-400 bg-gray-600 px-2 py-1 rounded-full">{assignedLots.length} lotes</span>
+                <button 
+                    onClick={(e) => { e.stopPropagation(); onDelete(employee.id); }} 
+                    className="ml-2 p-2 text-gray-500 hover:text-red-400 rounded-full hover:bg-red-500/10 transition-colors"
+                    title="Excluir funcionário"
+                >
+                    <Trash2 size={16} />
+                </button>
+                <ChevronDown size={20} className={`text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+            </div>
+            <AnimatePresence>
+                {isOpen && (
+                    <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className="overflow-hidden"
+                    >
+                        <div className="border-t border-gray-600 mx-3 my-2 pt-3 pb-1">
+                            {assignedLots.length > 0 ? (
+                                <ul className="space-y-2">
+                                    {assignedLots.map(lot => (
+                                        <li key={lot.id} className="flex justify-between items-center text-sm p-2 bg-gray-800/50 rounded-md">
+                                            <div className="flex items-center gap-2">
+                                                <Package size={14} className="text-gray-400" />
+                                                <span className="text-gray-300">{lot.name}</span>
+                                            </div>
+                                            <div className="flex items-center gap-3">
+                                                <div className="flex items-center gap-1 text-xs text-gray-400">
+                                                    <Clock size={12}/>
+                                                    <span>{format(lot.estimatedDeliveryDate, 'dd/MM/yy')}</span>
+                                                </div>
+                                                <StatusBadge status={lot.status} onChange={() => {}} />
+                                            </div>
+                                        </li>
+                                    ))}
+                                </ul>
+                            ) : (
+                                <p className="text-center text-sm text-gray-500 py-2">Nenhum lote atribuído a este funcionário.</p>
+                            )}
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </li>
+    )
+}
+
+const EmployeesPage: React.FC<EmployeesPageProps> = ({ employees, lots, onAddEmployee, onDeleteEmployee }) => {
+  const [newEmployeeName, setNewEmployeeName] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newEmployeeName.trim() || isSubmitting) return;
+    
+    setIsSubmitting(true);
+    await onAddEmployee(newEmployeeName);
+    setNewEmployeeName('');
+    setIsSubmitting(false);
+  };
+
+  return (
+    <div className="space-y-8">
+      <div>
+        <h2 className="text-2xl font-bold text-white mb-4">Gerenciar Funcionários</h2>
+        <form onSubmit={handleSubmit} className="flex gap-2 max-w-md">
+          <input
+            type="text"
+            value={newEmployeeName}
+            onChange={(e) => setNewEmployeeName(e.target.value)}
+            placeholder="Nome do novo funcionário"
+            className="flex-grow bg-gray-800 border-gray-700 border rounded-md shadow-sm text-white p-2 focus:ring-blue-500 focus:border-blue-500"
+            disabled={isSubmitting}
+          />
+          <button
+            type="submit"
+            disabled={!newEmployeeName.trim() || isSubmitting}
+            className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white font-semibold px-4 py-2 rounded-lg transition-colors disabled:bg-gray-600 disabled:cursor-not-allowed"
+          >
+            <UserPlus size={20} />
+            {isSubmitting ? 'Adicionando...' : 'Adicionar'}
+          </button>
+        </form>
+      </div>
+
+      <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
+        <h3 className="text-lg font-semibold text-white mb-4">Funcionários Cadastrados</h3>
+        {employees.length > 0 ? (
+          <ul className="space-y-3">
+            {employees.map(employee => (
+              <EmployeeItem 
+                key={employee.id} 
+                employee={employee} 
+                lots={lots}
+                onDelete={onDeleteEmployee} 
+              />
+            ))}
+          </ul>
+        ) : (
+          <div className="text-center py-10">
+            <User size={40} className="mx-auto text-gray-600" />
+            <p className="mt-2 text-gray-500">Nenhum funcionário cadastrado.</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default EmployeesPage;

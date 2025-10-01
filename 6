@@ -1,0 +1,274 @@
+import { useState, useEffect, useCallback } from 'react';
+import { Routes, Route } from 'react-router-dom';
+import Header from './components/Header';
+import DashboardPage from './pages/DashboardPage';
+import EmployeesPage from './pages/EmployeesPage';
+import ProductsPage from './pages/ProductsPage';
+import Spinner from './components/Spinner';
+import { Lot, LotStatus, Employee, Product, LotProduct } from './types';
+import { calculateDeliveryDate } from './utils/dateCalculator';
+import { supabase } from './lib/supabaseClient';
+
+function App() {
+  const [lots, setLots] = useState<Lot[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!supabase) {
+    return (
+      <div className="min-h-screen bg-gray-900 text-gray-200 font-sans flex items-center justify-center p-4">
+         <div className="text-center py-12 px-6 text-red-400 bg-red-900/20 rounded-lg max-w-2xl mx-auto border border-red-500/30">
+            <h2 className="text-3xl font-bold">Configuração Incompleta</h2>
+            <p className="mt-4 text-lg">A conexão com o banco de dados Supabase falhou.</p>
+            <p className="mt-2 text-gray-400">
+              Por favor, conecte seu projeto Supabase e certifique-se de que as variáveis 
+              <code className="bg-gray-700 p-1 rounded mx-1">VITE_SUPABASE_URL</code> e <code className="bg-gray-700 p-1 rounded mx-1">VITE_SUPABASE_ANON_KEY</code> 
+              estão corretamente preenchidas no seu arquivo <code>.env</code>.
+            </p>
+         </div>
+      </div>
+    );
+  }
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [employeesRes, lotsRes, productsRes] = await Promise.all([
+        supabase.from('employees').select('*').order('name', { ascending: true }),
+        supabase.from('lots').select('*, lot_products(*)').order('created_at', { ascending: false }),
+        supabase.from('products').select('*').order('name', { ascending: true })
+      ]);
+
+      if (employeesRes.error) throw employeesRes.error;
+      if (lotsRes.error) throw lotsRes.error;
+      if (productsRes.error) throw productsRes.error;
+
+      setEmployees(employeesRes.data || []);
+      setProducts(productsRes.data || []);
+      
+      const formattedLots: Lot[] = (lotsRes.data || []).map((lot: any) => {
+        const productsInLot: LotProduct[] = (lot.lot_products || []).map((p: any) => ({
+            lot_product_id: p.id,
+            id: p.product_id,
+            name: p.name,
+            production_time: p.production_time,
+            input_usage: p.input_usage,
+            quantity: p.quantity,
+            completed_quantity: p.completed_quantity,
+            real_input_usage: p.real_input_usage,
+        }));
+        
+        const totalProductionTime = productsInLot.reduce((acc: number, p: any) => acc + (p.production_time * p.quantity), 0);
+        const totalInputUsage = productsInLot.reduce((acc: number, p: any) => acc + (p.input_usage * p.quantity), 0);
+        const totalItems = productsInLot.reduce((acc, p) => acc + p.quantity, 0);
+        const totalCompletedItems = productsInLot.reduce((acc, p) => acc + p.completed_quantity, 0);
+        
+        const totalTimeSpent = productsInLot.reduce((acc: number, p: any) => acc + (p.production_time * p.completed_quantity), 0);
+        const totalInputUsed = productsInLot.reduce((acc: number, p: any) => acc + p.real_input_usage, 0);
+        
+        const remainingProductionTime = totalProductionTime - totalTimeSpent;
+        const startDate = new Date(lot.start_date + 'T00:00:00');
+
+        return {
+          id: lot.id,
+          name: lot.name,
+          products: productsInLot,
+          status: lot.status,
+          startDate: startDate,
+          totalProductionTime,
+          totalInputUsage,
+          totalTimeSpent,
+          totalInputUsed, // This now reflects REAL usage
+          estimatedDeliveryDate: calculateDeliveryDate(new Date(), remainingProductionTime),
+          employeeId: lot.employee_id,
+          totalItems,
+          totalCompletedItems,
+        };
+      });
+      setLots(formattedLots);
+
+    } catch (err: any) {
+      console.error("Erro ao buscar dados:", err);
+      setError("Falha ao carregar os dados. Verifique se executou o script SQL mais recente.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const handleUpdateStatus = async (lotId: string, status: LotStatus) => {
+    const { error } = await supabase.from('lots').update({ status }).eq('id', lotId);
+    if (error) {
+      console.error("Erro ao atualizar status:", error);
+    } else {
+      await fetchData();
+    }
+  };
+
+  const handleUpdateLotProgress = async (updates: { id: number; completed_quantity: number; real_input_usage: number }[]) => {
+    const updatePromises = updates.map(update =>
+      supabase
+        .from('lot_products')
+        .update({ 
+            completed_quantity: update.completed_quantity,
+            real_input_usage: update.real_input_usage
+        })
+        .eq('id', update.id)
+    );
+  
+    const results = await Promise.all(updatePromises);
+    const firstError = results.find(result => result.error);
+  
+    if (firstError?.error) {
+      console.error("Erro ao atualizar progresso do lote:", firstError.error);
+      setError(`Não foi possível salvar o progresso: ${firstError.error.message}`);
+    } else {
+      await fetchData();
+    }
+  };
+
+  const handleSaveLot = async (data: any, editingLotId: string | null) => {
+    const payload = {
+      p_name: data.name,
+      p_start_date: data.startDate,
+      p_employee_id: data.employeeId || null,
+      p_products: data.products.map((p: any) => ({
+        id: p.id,
+        name: p.name,
+        productionTime: p.production_time,
+        inputUsage: p.input_usage,
+        quantity: p.quantity,
+      })),
+    };
+
+    const rpcCall = editingLotId ? 
+      supabase.rpc('update_lot', { ...payload, p_lot_id: editingLotId }) : 
+      supabase.rpc('create_lot', payload);
+
+    const { error } = await rpcCall;
+    if (error) {
+      console.error("Erro ao salvar lote:", error);
+      if (error.message.includes("invalid input syntax")) {
+        setError("Erro de tipo de dado no lote. Parece que seu banco de dados não está configurado para aceitar valores decimais. Por favor, execute o script SQL de migração mais recente.");
+      } else {
+        setError(`Não foi possível salvar o lote: ${error.message}`);
+      }
+    } else {
+      await fetchData();
+    }
+  };
+  
+  const handleDeleteLot = async (lotId: string) => {
+    if (window.confirm("Tem certeza que deseja excluir este lote? Esta ação é irreversível.")) {
+        const { error } = await supabase.from('lots').delete().eq('id', lotId);
+        if (error) {
+            console.error("Erro ao excluir lote:", error);
+        } else {
+            setLots(prev => prev.filter(lot => lot.id !== lotId));
+        }
+    }
+  };
+  
+  const handleAddEmployee = async (name: string) => {
+    if (name.trim()) {
+        const { error } = await supabase.from('employees').insert({ name: name.trim() });
+        if (error) console.error("Erro ao adicionar funcionário:", error);
+        else await fetchData();
+    }
+  };
+
+  const handleDeleteEmployee = async (employeeId: string) => {
+    if (window.confirm("Tem certeza que deseja excluir este funcionário? Os lotes atribuídos a ele ficarão sem atribuição.")) {
+        const { error } = await supabase.from('employees').delete().eq('id', employeeId);
+        if (error) console.error("Erro ao excluir funcionário:", error);
+        else await fetchData();
+    }
+  };
+
+  const handleSaveProduct = async (productData: Omit<Product, 'id'>, editingProductId: string | null) => {
+    const query = editingProductId
+      ? supabase.from('products').update(productData).eq('id', editingProductId)
+      : supabase.from('products').insert(productData);
+    
+    const { error } = await query;
+    if (error) {
+      console.error("Erro ao salvar produto:", error);
+      if (error.code === '22P02') {
+        setError("Erro de tipo de dado. Parece que seu banco de dados não está configurado para aceitar valores decimais. Por favor, execute o script SQL de migração para corrigir.");
+      } else {
+        setError(`Não foi possível salvar o produto: ${error.message}`);
+      }
+    } else {
+      await fetchData();
+    }
+  };
+
+  const handleDeleteProduct = async (productId: string) => {
+    if (window.confirm("Tem certeza que deseja excluir este produto? Ele não poderá ser adicionado a novos lotes.")) {
+        const { error } = await supabase.from('products').delete().eq('id', productId);
+        if (error) console.error("Erro ao excluir produto:", error);
+        else await fetchData();
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-900 text-gray-200 font-sans">
+      <Header />
+      <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {loading ? <Spinner /> : error ? (
+          <div className="text-center py-20 text-red-400 bg-red-900/20 rounded-lg">
+            <h2 className="text-2xl font-semibold">Ocorreu um Erro</h2>
+            <p className="mt-2">{error}</p>
+            <p className="text-sm text-gray-400 mt-4">Certifique-se de que executou o script SQL no seu editor Supabase.</p>
+          </div>
+        ) : (
+          <Routes>
+            <Route 
+              path="/" 
+              element={
+                <DashboardPage 
+                  lots={lots}
+                  employees={employees}
+                  products={products}
+                  onUpdateStatus={handleUpdateStatus}
+                  onSaveLot={handleSaveLot}
+                  onDeleteLot={handleDeleteLot}
+                  onUpdateLotProgress={handleUpdateLotProgress}
+                />
+              } 
+            />
+            <Route 
+              path="/products" 
+              element={
+                <ProductsPage
+                  products={products}
+                  onSave={handleSaveProduct}
+                  onDelete={handleDeleteProduct}
+                />
+              } 
+            />
+            <Route 
+              path="/employees" 
+              element={
+                <EmployeesPage 
+                  employees={employees}
+                  lots={lots}
+                  onAddEmployee={handleAddEmployee}
+                  onDeleteEmployee={handleDeleteEmployee}
+                />
+              } 
+            />
+          </Routes>
+        )}
+      </main>
+    </div>
+  );
+}
+
+export default App;

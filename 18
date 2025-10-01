@@ -1,0 +1,39 @@
+import { addDays, getDay } from 'date-fns';
+
+const WORK_HOURS_PER_DAY = 7;
+// Seg=1, Ter=2, Qua=3, Qui=4
+const WORK_DAYS_OF_WEEK = [1, 2, 3, 4]; 
+
+export function calculateDeliveryDate(startDate: Date, totalMinutes: number): Date {
+  if (totalMinutes <= 0) {
+    return startDate;
+  }
+
+  let minutesRemaining = totalMinutes;
+  let currentDate = new Date(startDate);
+  
+  // Normaliza para o início do dia para evitar problemas com fuso horário
+  currentDate.setHours(0, 0, 0, 0);
+
+  // Se hoje for um dia de trabalho, mas o trabalho já começou,
+  // não queremos pular para o próximo dia útil imediatamente.
+  // A lógica abaixo cuida disso naturalmente.
+
+  while (minutesRemaining > 0) {
+    // Avança para o próximo dia útil se o dia atual não for um
+    while (!WORK_DAYS_OF_WEEK.includes(getDay(currentDate))) {
+      currentDate = addDays(currentDate, 1);
+    }
+    
+    // Deduz as horas de trabalho do dia
+    minutesRemaining -= WORK_HOURS_PER_DAY * 60;
+
+    // Se ainda houver trabalho a ser feito, avança para o próximo dia calendário
+    // O loop while no início garantirá que ele pule para o próximo dia útil
+    if (minutesRemaining > 0) {
+      currentDate = addDays(currentDate, 1);
+    }
+  }
+
+  return currentDate;
+}

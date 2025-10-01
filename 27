@@ -1,0 +1,88 @@
+import { useState } from 'react';
+import LotList from '../components/LotList';
+import ViewLotModal from '../components/ViewLotModal';
+import LotFormModal from '../components/LotFormModal';
+import { Lot, LotStatus, Employee, Product } from '../types';
+
+interface DashboardPageProps {
+    lots: Lot[];
+    employees: Employee[];
+    products: Product[];
+    onUpdateStatus: (lotId: string, status: LotStatus) => void;
+    onSaveLot: (data: any, editingLotId: string | null) => void;
+    onDeleteLot: (lotId: string) => void;
+    onUpdateLotProgress: (updates: { id: number; completed_quantity: number; real_input_usage: number }[]) => Promise<void>;
+}
+
+const DashboardPage: React.FC<DashboardPageProps> = ({ lots, employees, products, onUpdateStatus, onSaveLot, onDeleteLot, onUpdateLotProgress }) => {
+  const [viewingLot, setViewingLot] = useState<Lot | null>(null);
+  const [editingLot, setEditingLot] = useState<Lot | null>(null);
+  const [isCreatingLot, setIsCreatingLot] = useState(false);
+
+  const handleSave = (data: any, lotId: string | null) => {
+    onSaveLot(data, lotId);
+    handleCloseModal();
+  };
+
+  const handleDelete = (lotId: string) => {
+    onDeleteLot(lotId);
+    handleCloseModal();
+  };
+
+  const handleCloseModal = () => {
+    setViewingLot(null);
+    setEditingLot(null);
+    setIsCreatingLot(false);
+  };
+  
+  const handleCreateNew = () => {
+    setEditingLot(null);
+    setIsCreatingLot(true);
+  }
+
+  return (
+    <>
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-bold text-white">Visão Geral dos Lotes</h2>
+         <button
+            onClick={handleCreateNew}
+            className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white font-semibold px-4 py-2 rounded-lg transition-colors"
+          >
+            Criar Novo Lote
+          </button>
+      </div>
+
+      <LotList
+        lots={lots}
+        employees={employees}
+        onView={setViewingLot}
+        onEdit={setEditingLot}
+        onUpdateStatus={onUpdateStatus}
+      />
+
+      {viewingLot && (
+        <ViewLotModal
+          lot={viewingLot}
+          employees={employees}
+          isOpen={!!viewingLot}
+          onClose={handleCloseModal}
+          onUpdateProgress={onUpdateLotProgress}
+        />
+      )}
+
+      {(isCreatingLot || editingLot) && (
+        <LotFormModal
+          isOpen={isCreatingLot || !!editingLot}
+          onClose={handleCloseModal}
+          onSave={handleSave}
+          onDelete={handleDelete}
+          existingLot={editingLot}
+          products={products}
+          employees={employees}
+        />
+      )}
+    </>
+  );
+}
+
+export default DashboardPage;

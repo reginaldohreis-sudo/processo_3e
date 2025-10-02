@@ -49,7 +49,6 @@ const ProductsPage: React.FC<ProductsPageProps> = ({ products, onSave, onDelete 
               <tr>
                 <th scope="col" className="px-6 py-3">Produto</th>
                 <th scope="col" className="px-6 py-3 text-center">Tempo de Produção</th>
-                <th scope="col" className="px-6 py-3 text-center">Insumo Gasto (kg)</th>
                 <th scope="col" className="px-6 py-3 text-right">Ações</th>
               </tr>
             </thead>
@@ -60,7 +59,6 @@ const ProductsPage: React.FC<ProductsPageProps> = ({ products, onSave, onDelete 
                     {product.name}
                   </th>
                   <td className="px-6 py-4 text-center">{formatMinutes(product.production_time)}</td>
-                  <td className="px-6 py-4 text-center">{product.input_usage.toLocaleString('pt-BR')} kg</td>
                   <td className="px-6 py-4 text-right space-x-2">
                     <button onClick={() => handleOpenModal(product)} className="p-2 text-gray-400 hover:text-blue-400"><Edit size={16} /></button>
                     <button onClick={() => onDelete(product.id)} className="p-2 text-gray-400 hover:text-red-400"><Trash2 size={16} /></button>

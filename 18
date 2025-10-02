@@ -1,39 +1,74 @@
 import { addDays, getDay } from 'date-fns';
 
 const WORK_HOURS_PER_DAY = 7;
-// Seg=1, Ter=2, Qua=3, Qui=4
-const WORK_DAYS_OF_WEEK = [1, 2, 3, 4]; 
+// Seg=1, Ter=2, Qua=3, Qui=4, Sex=5
+const WORK_DAYS_OF_WEEK = [1, 2, 3, 4, 5];
 
-export function calculateDeliveryDate(startDate: Date, totalMinutes: number): Date {
-  if (totalMinutes <= 0) {
-    return startDate;
+/**
+ * Simula o consumo de dias de trabalho para uma quantidade de minutos.
+ * Esta função "preenche" os dias de trabalho (de 7 horas) com os minutos fornecidos,
+ * avançando no calendário e pulando dias não úteis.
+ * Retorna o dia em que o trabalho termina.
+ */
+function getWorkdayConsumption(startDate: Date, totalMinutes: number): Date {
+  let currentDate = new Date(startDate);
+  currentDate.setHours(0, 0, 0, 0); // Normaliza para o início do dia
+
+  let minutesToSchedule = totalMinutes;
+
+  if (minutesToSchedule <= 0) {
+      // Se não há tempo, retorna a data de início (ou o próximo dia útil se a data de início não for um)
+      while (!WORK_DAYS_OF_WEEK.includes(getDay(currentDate))) {
+        currentDate = addDays(currentDate, 1);
+      }
+      return currentDate;
   }
 
-  let minutesRemaining = totalMinutes;
-  let currentDate = new Date(startDate);
-  
-  // Normaliza para o início do dia para evitar problemas com fuso horário
-  currentDate.setHours(0, 0, 0, 0);
+  // Encontra o primeiro dia útil para começar a contagem
+  while (!WORK_DAYS_OF_WEEK.includes(getDay(currentDate))) {
+    currentDate = addDays(currentDate, 1);
+  }
 
-  // Se hoje for um dia de trabalho, mas o trabalho já começou,
-  // não queremos pular para o próximo dia útil imediatamente.
-  // A lógica abaixo cuida disso naturalmente.
+  while (minutesToSchedule > 0) {
+    const minutesInThisDay = WORK_HOURS_PER_DAY * 60;
 
-  while (minutesRemaining > 0) {
-    // Avança para o próximo dia útil se o dia atual não for um
-    while (!WORK_DAYS_OF_WEEK.includes(getDay(currentDate))) {
+    if (minutesToSchedule > minutesInThisDay) {
+      // Se o tempo restante excede um dia de trabalho, consome o dia inteiro.
+      minutesToSchedule -= minutesInThisDay;
+      
+      // Avança para o próximo dia do calendário.
       currentDate = addDays(currentDate, 1);
-    }
-    
-    // Deduz as horas de trabalho do dia
-    minutesRemaining -= WORK_HOURS_PER_DAY * 60;
 
-    // Se ainda houver trabalho a ser feito, avança para o próximo dia calendário
-    // O loop while no início garantirá que ele pule para o próximo dia útil
-    if (minutesRemaining > 0) {
-      currentDate = addDays(currentDate, 1);
+      // E então, encontra o próximo dia *útil* para continuar o trabalho.
+      while (!WORK_DAYS_OF_WEEK.includes(getDay(currentDate))) {
+        currentDate = addDays(currentDate, 1);
+      }
+    } else {
+      // Se o tempo restante cabe neste dia, o trabalho termina aqui.
+      // A data de conclusão é o dia atual.
+      minutesToSchedule = 0;
     }
   }
 
   return currentDate;
+}
+
+
+/**
+ * Calcula a data de entrega final com base no progresso real.
+ * A lógica é projetar o futuro com base no trabalho que ainda falta.
+ */
+export function calculateDynamicDeliveryDate(
+  lotStartDate: Date,
+  totalTimeSpent: number,
+  estimatedMinutesRemaining: number
+): Date {
+  
+  // 1. Calcula o tempo total de produção (real + estimado)
+  const totalMinutesToSchedule = totalTimeSpent + estimatedMinutesRemaining;
+
+  // 2. Agenda o tempo total a partir da data de início do lote.
+  const finalDate = getWorkdayConsumption(lotStartDate, totalMinutesToSchedule);
+
+  return finalDate;
 }

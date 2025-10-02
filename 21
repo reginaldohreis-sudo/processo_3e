@@ -1,6 +1,6 @@
 import React from 'react';
 import { Lot, LotStatus, Employee } from '../types';
-import { Eye, Edit, FileDown, User, Package, Clock } from 'lucide-react';
+import { Eye, Edit, FileDown, User, Flame } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn, formatMinutes } from '../lib/utils';
 import StatusBadge from './StatusBadge';
@@ -74,6 +74,23 @@ const LotItem: React.FC<LotItemProps> = ({ lot, employees, onView, onEdit, onUpd
         <div>
             <div className="font-bold text-white">{lot.totalInputUsed.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} kg</div>
             <div className="text-xs text-gray-400">Insumo Gasto</div>
+        </div>
+      </div>
+
+      <div className="border-t border-gray-700 p-3 grid grid-cols-2 gap-2 text-center text-sm">
+        <div>
+            <div className="font-bold text-white flex items-center justify-center gap-1.5">
+                <Flame size={14} className="text-orange-400" /> 
+                {lot.oxygenCylindersNeeded} cil.
+            </div>
+            <div className="text-xs text-gray-400">Oxigênio</div>
+        </div>
+        <div>
+            <div className="font-bold text-white flex items-center justify-center gap-1.5">
+                <Flame size={14} className="text-red-500" /> 
+                {lot.acetyleneCylindersNeeded} cil.
+            </div>
+            <div className="text-xs text-gray-400">Acetileno</div>
         </div>
       </div>
 

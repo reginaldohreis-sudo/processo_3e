@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import Modal from './Modal';
-import { Lot, Product, Employee } from '../types';
+import { Lot, Product, Employee, Nozzle } from '../types';
 import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -11,11 +11,11 @@ const schema = z.object({
   name: z.string().min(3, "O nome deve ter pelo menos 3 caracteres."),
   startDate: z.string().refine((val) => !isNaN(Date.parse(val)), "Data inválida."),
   employeeId: z.string().optional(),
+  nozzleId: z.string().min(1, "Selecione um bico para o lote."),
   products: z.array(z.object({
     id: z.string(),
     name: z.string(),
     production_time: z.number(),
-    input_usage: z.number(),
     quantity: z.number().min(1, "A quantidade deve ser pelo menos 1."),
   })).min(1, "Adicione pelo menos um produto ao lote."),
 });
@@ -30,9 +30,10 @@ interface LotFormModalProps {
   existingLot?: Lot | null;
   products: Product[];
   employees: Employee[];
+  nozzles: Nozzle[];
 }
 
-const LotFormModal: React.FC<LotFormModalProps> = ({ isOpen, onClose, onSave, onDelete, existingLot, products, employees }) => {
+const LotFormModal: React.FC<LotFormModalProps> = ({ isOpen, onClose, onSave, onDelete, existingLot, products = [], employees = [], nozzles = [] }) => {
   const { register, control, handleSubmit, reset, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: {
@@ -40,6 +41,7 @@ const LotFormModal: React.FC<LotFormModalProps> = ({ isOpen, onClose, onSave, on
       startDate: format(new Date(), 'yyyy-MM-dd'),
       products: [],
       employeeId: '',
+      nozzleId: '',
     },
   });
 
@@ -61,10 +63,10 @@ const LotFormModal: React.FC<LotFormModalProps> = ({ isOpen, onClose, onSave, on
             id: p.id,
             name: p.name,
             production_time: p.production_time,
-            input_usage: p.input_usage,
             quantity: p.quantity
           })),
           employeeId: existingLot.employeeId || '',
+          nozzleId: existingLot.nozzleId || '',
         });
       } else {
         reset({
@@ -72,6 +74,7 @@ const LotFormModal: React.FC<LotFormModalProps> = ({ isOpen, onClose, onSave, on
           startDate: format(new Date(), 'yyyy-MM-dd'),
           products: [],
           employeeId: '',
+          nozzleId: '',
         });
       }
     }
@@ -110,12 +113,22 @@ const LotFormModal: React.FC<LotFormModalProps> = ({ isOpen, onClose, onSave, on
               {errors.startDate && <p className="text-red-400 text-xs mt-1">{errors.startDate.message}</p>}
             </div>
         </div>
-        <div>
-            <label htmlFor="employeeId" className="block text-sm font-medium text-gray-300">Atribuir a</label>
-            <select {...register('employeeId')} id="employeeId" className="mt-1 block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm text-white p-2">
-                <option value="">Não atribuído</option>
-                {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-            </select>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+                <label htmlFor="nozzleId" className="block text-sm font-medium text-gray-300">Bico (Ferramenta)</label>
+                <select {...register('nozzleId')} id="nozzleId" className="mt-1 block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm text-white p-2">
+                    <option value="">Selecione um bico</option>
+                    {nozzles.map(n => <option key={n.id} value={n.id}>{n.name} ({n.flow_rate} g/s)</option>)}
+                </select>
+                {errors.nozzleId && <p className="text-red-400 text-xs mt-1">{errors.nozzleId.message}</p>}
+            </div>
+            <div>
+                <label htmlFor="employeeId" className="block text-sm font-medium text-gray-300">Atribuir a</label>
+                <select {...register('employeeId')} id="employeeId" className="mt-1 block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm text-white p-2">
+                    <option value="">Não atribuído</option>
+                    {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                </select>
+            </div>
         </div>
 
         <div>

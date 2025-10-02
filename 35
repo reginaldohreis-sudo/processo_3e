@@ -1,64 +1,64 @@
 import React, { useEffect } from 'react';
 import Modal from './Modal';
-import { Product } from '../types';
+import { Nozzle } from '../types';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 
 const schema = z.object({
   name: z.string().min(3, "O nome deve ter pelo menos 3 caracteres."),
-  production_time: z.number().min(0, "O tempo de produção não pode ser negativo."),
+  flow_rate: z.number().positive("A vazão deve ser um número positivo."),
 });
 
 type FormData = z.infer<typeof schema>;
 
-interface ProductFormModalProps {
+interface NozzleFormModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (data: FormData) => void;
-  existingProduct?: Product | null;
+  existingNozzle?: Nozzle | null;
 }
 
-const ProductFormModal: React.FC<ProductFormModalProps> = ({ isOpen, onClose, onSave, existingProduct }) => {
+const NozzleFormModal: React.FC<NozzleFormModalProps> = ({ isOpen, onClose, onSave, existingNozzle }) => {
   const { register, handleSubmit, reset, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
   });
 
   useEffect(() => {
     if (isOpen) {
-      if (existingProduct) {
+      if (existingNozzle) {
         reset({
-          name: existingProduct.name,
-          production_time: existingProduct.production_time,
+          name: existingNozzle.name,
+          flow_rate: existingNozzle.flow_rate,
         });
       } else {
-        reset({ name: '', production_time: 0 });
+        reset({ name: '', flow_rate: 0 });
       }
     }
-  }, [isOpen, existingProduct, reset]);
+  }, [isOpen, existingNozzle, reset]);
 
   const processSubmit = (data: FormData) => {
     onSave(data);
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={existingProduct ? 'Editar Produto' : 'Adicionar Produto'} size="lg">
+    <Modal isOpen={isOpen} onClose={onClose} title={existingNozzle ? 'Editar Bico' : 'Adicionar Bico'} size="lg">
       <form onSubmit={handleSubmit(processSubmit)} className="space-y-4">
         <div>
-          <label htmlFor="name" className="block text-sm font-medium text-gray-300">Nome do Produto</label>
+          <label htmlFor="name" className="block text-sm font-medium text-gray-300">Nome do Bico</label>
           <input {...register('name')} id="name" className="mt-1 block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm text-white p-2" />
           {errors.name && <p className="text-red-400 text-xs mt-1">{errors.name.message}</p>}
         </div>
         <div>
-            <label htmlFor="production_time" className="block text-sm font-medium text-gray-300">Tempo de Produção (minutos)</label>
+            <label htmlFor="flow_rate" className="block text-sm font-medium text-gray-300">Vazão (gramas por segundo)</label>
             <input 
-              {...register('production_time', { valueAsNumber: true })} 
-              id="production_time" 
+              {...register('flow_rate', { valueAsNumber: true })} 
+              id="flow_rate" 
               type="number" 
               step="any"
               className="mt-1 block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm text-white p-2" 
             />
-            {errors.production_time && <p className="text-red-400 text-xs mt-1">{errors.production_time.message}</p>}
+            {errors.flow_rate && <p className="text-red-400 text-xs mt-1">{errors.flow_rate.message}</p>}
         </div>
         
         <div className="flex justify-end gap-2 pt-4 border-t border-gray-700">
@@ -66,7 +66,7 @@ const ProductFormModal: React.FC<ProductFormModalProps> = ({ isOpen, onClose, on
             Cancelar
           </button>
           <button type="submit" className="px-4 py-2 bg-blue-500 text-white font-semibold rounded-lg hover:bg-blue-600 transition-colors">
-            Salvar Produto
+            Salvar Bico
           </button>
         </div>
       </form>
@@ -74,4 +74,4 @@ const ProductFormModal: React.FC<ProductFormModalProps> = ({ isOpen, onClose, on
   );
 };
 
-export default ProductFormModal;
+export default NozzleFormModal;

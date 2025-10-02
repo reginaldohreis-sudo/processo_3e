@@ -1,0 +1,9 @@
+// Gas Consumption Parameters
+
+// Oxigênio
+export const OXYGEN_FLOW_RATE_LPH = 1.0; // Vazão em Litros por Hora
+export const OXYGEN_CYLINDER_SIZE_L = 50; // Tamanho do cilindro em Litros
+
+// Acetileno
+export const ACETYLENE_FLOW_RATE_LPH = 1.15; // Vazão em Litros por Hora
+export const ACETYLENE_CYLINDER_SIZE_L = 55; // Tamanho do cilindro em Litros

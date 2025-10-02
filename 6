@@ -4,15 +4,23 @@ import Header from './components/Header';
 import DashboardPage from './pages/DashboardPage';
 import EmployeesPage from './pages/EmployeesPage';
 import ProductsPage from './pages/ProductsPage';
+import NozzlesPage from './pages/NozzlesPage'; // Import new page
 import Spinner from './components/Spinner';
-import { Lot, LotStatus, Employee, Product, LotProduct } from './types';
-import { calculateDeliveryDate } from './utils/dateCalculator';
+import { Lot, LotStatus, Employee, Product, LotProduct, Nozzle } from './types';
+import { calculateDynamicDeliveryDate } from './utils/dateCalculator';
 import { supabase } from './lib/supabaseClient';
+import { 
+  OXYGEN_FLOW_RATE_LPH, 
+  OXYGEN_CYLINDER_SIZE_L, 
+  ACETYLENE_FLOW_RATE_LPH, 
+  ACETYLENE_CYLINDER_SIZE_L 
+} from './config';
 
 function App() {
   const [lots, setLots] = useState<Lot[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [nozzles, setNozzles] = useState<Nozzle[]>([]); // State for nozzles
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -36,56 +44,89 @@ function App() {
     setLoading(true);
     setError(null);
     try {
-      const [employeesRes, lotsRes, productsRes] = await Promise.all([
+      const [employeesRes, lotsRes, productsRes, nozzlesRes] = await Promise.all([
         supabase.from('employees').select('*').order('name', { ascending: true }),
-        supabase.from('lots').select('*, lot_products(*)').order('created_at', { ascending: false }),
-        supabase.from('products').select('*').order('name', { ascending: true })
+        supabase.from('lots').select('*, lot_products(*), nozzles(*)').order('created_at', { ascending: false }),
+        supabase.from('products').select('*').order('name', { ascending: true }),
+        supabase.from('nozzles').select('*').order('name', { ascending: true }) // Fetch nozzles
       ]);
 
       if (employeesRes.error) throw employeesRes.error;
       if (lotsRes.error) throw lotsRes.error;
       if (productsRes.error) throw productsRes.error;
+      if (nozzlesRes.error) throw nozzlesRes.error;
 
+      const fetchedNozzles = nozzlesRes.data || [];
       setEmployees(employeesRes.data || []);
       setProducts(productsRes.data || []);
+      setNozzles(fetchedNozzles);
       
       const formattedLots: Lot[] = (lotsRes.data || []).map((lot: any) => {
+        const nozzle = lot.nozzles;
         const productsInLot: LotProduct[] = (lot.lot_products || []).map((p: any) => ({
             lot_product_id: p.id,
             id: p.product_id,
             name: p.name,
             production_time: p.production_time,
-            input_usage: p.input_usage,
             quantity: p.quantity,
             completed_quantity: p.completed_quantity,
             real_input_usage: p.real_input_usage,
+            real_time_spent: p.real_time_spent,
         }));
         
         const totalProductionTime = productsInLot.reduce((acc: number, p: any) => acc + (p.production_time * p.quantity), 0);
-        const totalInputUsage = productsInLot.reduce((acc: number, p: any) => acc + (p.input_usage * p.quantity), 0);
+        
+        const totalInputUsage = nozzle ? productsInLot.reduce((acc, p) => acc + (nozzle.flow_rate * p.production_time * 60 * p.quantity), 0) / 1000 : 0;
+
         const totalItems = productsInLot.reduce((acc, p) => acc + p.quantity, 0);
         const totalCompletedItems = productsInLot.reduce((acc, p) => acc + p.completed_quantity, 0);
         
-        const totalTimeSpent = productsInLot.reduce((acc: number, p: any) => acc + (p.production_time * p.completed_quantity), 0);
+        const totalTimeSpent = productsInLot.reduce((acc: number, p: any) => acc + p.real_time_spent, 0);
         const totalInputUsed = productsInLot.reduce((acc: number, p: any) => acc + p.real_input_usage, 0);
         
-        const remainingProductionTime = totalProductionTime - totalTimeSpent;
-        const startDate = new Date(lot.start_date + 'T00:00:00');
+        const totalProductionHours = totalProductionTime / 60;
+        const oxygenLitersNeeded = totalProductionHours * OXYGEN_FLOW_RATE_LPH;
+        const oxygenCylindersNeeded = oxygenLitersNeeded > 0 ? Math.ceil(oxygenLitersNeeded / OXYGEN_CYLINDER_SIZE_L) : 0;
+        const acetyleneLitersNeeded = totalProductionHours * ACETYLENE_FLOW_RATE_LPH;
+        const acetyleneCylindersNeeded = acetyleneLitersNeeded > 0 ? Math.ceil(acetyleneLitersNeeded / ACETYLENE_CYLINDER_SIZE_L) : 0;
+
+        const [year, month, day] = lot.start_date.split('-').map(Number);
+        const safeStartDate = new Date(year, month - 1, day);
+
+        const hasRealProgress = totalCompletedItems > 0 && totalTimeSpent > 0;
+        const minutesPerItem = hasRealProgress
+          ? totalTimeSpent / totalCompletedItems
+          : (totalItems > 0 ? totalProductionTime / totalItems : 0);
+
+        const remainingItems = totalItems - totalCompletedItems;
+        const estimatedMinutesRemaining = remainingItems * minutesPerItem;
+
+        const finalEstimatedDeliveryDate = calculateDynamicDeliveryDate(
+            safeStartDate,
+            totalTimeSpent,
+            estimatedMinutesRemaining
+        );
 
         return {
           id: lot.id,
           name: lot.name,
           products: productsInLot,
           status: lot.status,
-          startDate: startDate,
+          startDate: safeStartDate,
           totalProductionTime,
           totalInputUsage,
           totalTimeSpent,
-          totalInputUsed, // This now reflects REAL usage
-          estimatedDeliveryDate: calculateDeliveryDate(new Date(), remainingProductionTime),
+          totalInputUsed,
+          estimatedDeliveryDate: finalEstimatedDeliveryDate,
           employeeId: lot.employee_id,
+          nozzleId: lot.nozzle_id,
+          nozzle: nozzle,
           totalItems,
           totalCompletedItems,
+          oxygenLitersNeeded,
+          oxygenCylindersNeeded,
+          acetyleneLitersNeeded,
+          acetyleneCylindersNeeded,
         };
       });
       setLots(formattedLots);
@@ -111,13 +152,14 @@ function App() {
     }
   };
 
-  const handleUpdateLotProgress = async (updates: { id: number; completed_quantity: number; real_input_usage: number }[]) => {
+  const handleUpdateLotProgress = async (updates: { id: number; completed_quantity: number; real_input_usage: number; real_time_spent: number }[]) => {
     const updatePromises = updates.map(update =>
       supabase
         .from('lot_products')
         .update({ 
             completed_quantity: update.completed_quantity,
-            real_input_usage: update.real_input_usage
+            real_input_usage: update.real_input_usage,
+            real_time_spent: update.real_time_spent,
         })
         .eq('id', update.id)
     );
@@ -138,27 +180,28 @@ function App() {
       p_name: data.name,
       p_start_date: data.startDate,
       p_employee_id: data.employeeId || null,
+      p_nozzle_id: data.nozzleId,
       p_products: data.products.map((p: any) => ({
         id: p.id,
         name: p.name,
         productionTime: p.production_time,
-        inputUsage: p.input_usage,
         quantity: p.quantity,
       })),
     };
-
-    const rpcCall = editingLotId ? 
-      supabase.rpc('update_lot', { ...payload, p_lot_id: editingLotId }) : 
-      supabase.rpc('create_lot', payload);
-
+  
+    const rpcCall = editingLotId
+      ? supabase.rpc('update_lot', { ...payload, p_lot_id: editingLotId })
+      : supabase.rpc('create_lot', { ...payload });
+  
     const { error } = await rpcCall;
+  
     if (error) {
       console.error("Erro ao salvar lote:", error);
-      if (error.message.includes("invalid input syntax")) {
-        setError("Erro de tipo de dado no lote. Parece que seu banco de dados não está configurado para aceitar valores decimais. Por favor, execute o script SQL de migração mais recente.");
-      } else {
-        setError(`Não foi possível salvar o lote: ${error.message}`);
+      let userFriendlyError = `Não foi possível salvar o lote: ${error.message}`;
+      if (error.message.includes('column "input_usage" of relation "lot_products" does not exist')) {
+        userFriendlyError = "Erro de Sincronização: As funções do banco de dados estão desatualizadas. Por favor, execute o script SQL fornecido para atualizar as funções 'create_lot' e 'update_lot'.";
       }
+      setError(userFriendlyError);
     } else {
       await fetchData();
     }
@@ -199,11 +242,7 @@ function App() {
     const { error } = await query;
     if (error) {
       console.error("Erro ao salvar produto:", error);
-      if (error.code === '22P02') {
-        setError("Erro de tipo de dado. Parece que seu banco de dados não está configurado para aceitar valores decimais. Por favor, execute o script SQL de migração para corrigir.");
-      } else {
-        setError(`Não foi possível salvar o produto: ${error.message}`);
-      }
+      setError(`Não foi possível salvar o produto: ${error.message}`);
     } else {
       await fetchData();
     }
@@ -213,6 +252,28 @@ function App() {
     if (window.confirm("Tem certeza que deseja excluir este produto? Ele não poderá ser adicionado a novos lotes.")) {
         const { error } = await supabase.from('products').delete().eq('id', productId);
         if (error) console.error("Erro ao excluir produto:", error);
+        else await fetchData();
+    }
+  };
+  
+  const handleSaveNozzle = async (nozzleData: Omit<Nozzle, 'id'>, editingNozzleId: string | null) => {
+    const query = editingNozzleId
+      ? supabase.from('nozzles').update(nozzleData).eq('id', editingNozzleId)
+      : supabase.from('nozzles').insert(nozzleData);
+    
+    const { error } = await query;
+    if (error) {
+      console.error("Erro ao salvar bico:", error);
+      setError(`Não foi possível salvar o bico: ${error.message}`);
+    } else {
+      await fetchData();
+    }
+  };
+
+  const handleDeleteNozzle = async (nozzleId: string) => {
+    if (window.confirm("Tem certeza que deseja excluir este bico? Os lotes que o utilizam ficarão sem bico atribuído.")) {
+        const { error } = await supabase.from('nozzles').delete().eq('id', nozzleId);
+        if (error) console.error("Erro ao excluir bico:", error);
         else await fetchData();
     }
   };
@@ -236,6 +297,7 @@ function App() {
                   lots={lots}
                   employees={employees}
                   products={products}
+                  nozzles={nozzles}
                   onUpdateStatus={handleUpdateStatus}
                   onSaveLot={handleSaveLot}
                   onDeleteLot={handleDeleteLot}
@@ -250,6 +312,16 @@ function App() {
                   products={products}
                   onSave={handleSaveProduct}
                   onDelete={handleDeleteProduct}
+                />
+              } 
+            />
+             <Route 
+              path="/nozzles" 
+              element={
+                <NozzlesPage
+                  nozzles={nozzles}
+                  onSave={handleSaveNozzle}
+                  onDelete={handleDeleteNozzle}
                 />
               } 
             />

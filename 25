@@ -3,7 +3,7 @@ import Modal from './Modal';
 import { Lot, Employee } from '../types';
 import { format } from 'date-fns';
 import { formatMinutes } from '../lib/utils';
-import { Calendar, Clock, Package, User, Download, Zap, Save } from 'lucide-react';
+import { Calendar, Clock, Package, User, Download, Zap, Save, Atom } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Chart, registerables, ChartConfiguration } from 'chart.js';
@@ -15,10 +15,10 @@ interface ViewLotModalProps {
   onClose: () => void;
   lot: Lot;
   employees: Employee[];
-  onUpdateProgress: (updates: { id: number; completed_quantity: number; real_input_usage: number }[]) => Promise<void>;
+  onUpdateProgress: (updates: { id: number; completed_quantity: number; real_input_usage: number; real_time_spent: number }[]) => Promise<void>;
 }
 
-type ProgressState = Record<number, { completed_quantity: number; real_input_usage: number }>;
+type ProgressState = Record<number, { completed_quantity: number; real_input_usage: number; real_time_spent: number }>;
 
 const ViewLotModal: React.FC<ViewLotModalProps> = ({ isOpen, onClose, lot, employees, onUpdateProgress }) => {
   const [progress, setProgress] = useState<ProgressState>({});
@@ -29,7 +29,8 @@ const ViewLotModal: React.FC<ViewLotModalProps> = ({ isOpen, onClose, lot, emplo
       const initialProgress = lot.products.reduce((acc, p) => {
         acc[p.lot_product_id] = {
             completed_quantity: p.completed_quantity,
-            real_input_usage: p.real_input_usage
+            real_input_usage: p.real_input_usage,
+            real_time_spent: p.real_time_spent,
         };
         return acc;
       }, {} as ProgressState);
@@ -39,8 +40,8 @@ const ViewLotModal: React.FC<ViewLotModalProps> = ({ isOpen, onClose, lot, emplo
 
   const assignedEmployee = employees.find(e => e.id === lot.employeeId);
 
-  const handleProgressChange = (lotProductId: number, field: 'completed_quantity' | 'real_input_usage', value: string, max?: number) => {
-    const numValue = field === 'completed_quantity' ? parseInt(value, 10) : parseFloat(value);
+  const handleProgressChange = (lotProductId: number, field: 'completed_quantity' | 'real_input_usage' | 'real_time_spent', value: string, max?: number) => {
+    const numValue = (field === 'completed_quantity') ? parseInt(value, 10) : parseFloat(value);
     
     if (!isNaN(numValue)) {
       let finalValue = numValue;
@@ -50,6 +51,11 @@ const ViewLotModal: React.FC<ViewLotModalProps> = ({ isOpen, onClose, lot, emplo
         finalValue = Math.max(0, finalValue);
       }
       
+      // Convert hours from input to minutes for state
+      if (field === 'real_time_spent') {
+        finalValue = finalValue * 60;
+      }
+
       setProgress(prev => ({
         ...prev,
         [lotProductId]: {
@@ -69,6 +75,7 @@ const ViewLotModal: React.FC<ViewLotModalProps> = ({ isOpen, onClose, lot, emplo
         id: Number(lot_product_id),
         completed_quantity: values.completed_quantity,
         real_input_usage: values.real_input_usage,
+        real_time_spent: values.real_time_spent,
       }));
     await onUpdateProgress(updates);
     setIsSaving(false);
@@ -92,6 +99,7 @@ const ViewLotModal: React.FC<ViewLotModalProps> = ({ isOpen, onClose, lot, emplo
         body: [
             ['Status', lot.status],
             ['Responsável', assignedEmployee?.name || 'Não atribuído'],
+            ['Bico Utilizado', `${lot.nozzle?.name} (${lot.nozzle?.flow_rate} g/s)` || 'Não definido'],
             ['Data de Início', format(lot.startDate, 'dd/MM/yyyy')],
             ['Entrega Estimada', format(lot.estimatedDeliveryDate, 'dd/MM/yyyy')],
         ],
@@ -106,7 +114,19 @@ const ViewLotModal: React.FC<ViewLotModalProps> = ({ isOpen, onClose, lot, emplo
         body: [
             ['Itens (Concluídos / Total)', `${lot.totalCompletedItems} / ${lot.totalItems} un.`],
             ['Tempo Gasto / Total', `${formatMinutes(lot.totalTimeSpent)} / ${formatMinutes(lot.totalProductionTime)}`],
-            ['Insumo Gasto (Real / Total)', `${lot.totalInputUsed.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} / ${lot.totalInputUsage.toLocaleString('pt-BR')} kg`],
+            ['Insumo Gasto (Real / Previsto)', `${lot.totalInputUsed.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} / ${lot.totalInputUsage.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} kg`],
+        ],
+        theme: 'grid',
+        headStyles: { fillColor: [44, 62, 80] },
+    });
+
+    // Consumo de Gás
+    autoTable(doc, {
+        startY: (doc as any).lastAutoTable.finalY + 10,
+        head: [['Consumo de Gás Estimado (Total)', 'Cilindros', 'Litros']],
+        body: [
+            ['Oxigênio', `${lot.oxygenCylindersNeeded} cil.`, `${lot.oxygenLitersNeeded.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} L`],
+            ['Acetileno', `${lot.acetyleneCylindersNeeded} cil.`, `${lot.acetyleneLitersNeeded.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} L`],
         ],
         theme: 'grid',
         headStyles: { fillColor: [44, 62, 80] },
@@ -115,23 +135,28 @@ const ViewLotModal: React.FC<ViewLotModalProps> = ({ isOpen, onClose, lot, emplo
     // Tabela de produtos
     autoTable(doc, {
       startY: (doc as any).lastAutoTable.finalY + 10,
-      head: [['Produto', 'Qtde. Total', 'Qtde. Concluída', 'Insumo Real (kg)']],
+      head: [['Produto', 'Qtde. Total', 'Qtde. Concluída', 'Insumo Real (kg)', 'Tempo Real (h)']],
       body: lot.products.map(p => [
         p.name,
         p.quantity,
         p.completed_quantity,
         p.real_input_usage.toLocaleString('pt-BR', { maximumFractionDigits: 2 }),
+        (p.real_time_spent / 60).toLocaleString('pt-BR', { maximumFractionDigits: 2 }),
       ]),
       theme: 'striped',
       headStyles: { fillColor: [44, 62, 80] },
     });
 
-    // --- Geração de Gráfico ---
+    doc.addPage();
+    doc.setFontSize(16);
+    doc.text('Gráficos de Desempenho', 14, 22);
+
+    // --- Geração de Gráficos ---
     const generateChartImage = (canvasId: string, config: ChartConfiguration): string => {
         const canvas = document.createElement('canvas');
         canvas.id = canvasId;
-        canvas.width = 800;
-        canvas.height = 400;
+        canvas.width = 800; // Aumentar a resolução para melhor qualidade
+        canvas.height = 450;
         canvas.style.display = 'none';
         document.body.appendChild(canvas);
 
@@ -147,31 +172,22 @@ const ViewLotModal: React.FC<ViewLotModalProps> = ({ isOpen, onClose, lot, emplo
         document.body.removeChild(canvas);
         return dataUrl;
     };
-
-    const theoreticalInputUsed = lot.products.reduce((acc, p) => acc + (p.input_usage * p.completed_quantity), 0);
     
-    const lineChartConfig: ChartConfiguration = {
+    // Gráfico 1: Insumo vs. Quantidade
+    const inputVsQtyConfig: ChartConfiguration = {
         type: 'line',
         data: {
             datasets: [
                 {
-                    label: 'Relação Prevista',
-                    data: [{ x: 0, y: 0 }, { x: lot.totalProductionTime, y: lot.totalInputUsage }],
+                    label: 'Previsto',
+                    data: [{ x: 0, y: 0 }, { x: lot.totalItems, y: lot.totalInputUsage }],
                     borderColor: 'rgba(54, 162, 235, 0.8)',
-                    backgroundColor: 'rgba(54, 162, 235, 0.2)',
                     tension: 0,
                     borderDash: [5, 5],
                 },
                 {
-                    label: 'Gasto Teórico',
-                    data: [{ x: 0, y: 0 }, { x: lot.totalTimeSpent, y: theoreticalInputUsed }],
-                    borderColor: 'rgba(255, 206, 86, 0.8)',
-                    backgroundColor: 'rgba(255, 206, 86, 0.2)',
-                    tension: 0,
-                },
-                {
-                    label: 'Gasto Real',
-                    data: [{ x: 0, y: 0 }, { x: lot.totalTimeSpent, y: lot.totalInputUsed }],
+                    label: 'Real',
+                    data: [{ x: 0, y: 0 }, { x: lot.totalCompletedItems, y: lot.totalInputUsed }],
                     borderColor: 'rgba(75, 192, 192, 0.8)',
                     backgroundColor: 'rgba(75, 192, 192, 0.2)',
                     tension: 0,
@@ -179,35 +195,73 @@ const ViewLotModal: React.FC<ViewLotModalProps> = ({ isOpen, onClose, lot, emplo
             ]
         },
         options: {
-            responsive: false,
-            animation: { duration: 0 },
+            responsive: false, animation: { duration: 0 },
             scales: {
-                x: {
-                    type: 'linear',
-                    position: 'bottom',
-                    title: { display: true, text: 'Tempo (minutos)' },
-                    beginAtZero: true,
-                },
-                y: {
-                    beginAtZero: true,
-                    title: { display: true, text: 'Insumo (kg)' }
-                }
+                x: { type: 'linear', position: 'bottom', title: { display: true, text: 'Quantidade de Peças (un)' }, beginAtZero: true },
+                y: { beginAtZero: true, title: { display: true, text: 'Insumo (kg)' } }
             },
             plugins: {
-                title: { display: true, text: 'Análise de Desempenho: Tempo vs. Insumo', font: { size: 16 } },
+                title: { display: true, text: 'Análise: Insumo vs. Quantidade', font: { size: 14 } },
                 legend: { position: 'top' },
             }
         }
     };
 
-    const lineChartImage = generateChartImage('lineChartCanvas', lineChartConfig);
+    // Gráfico 2: Quantidade vs. Tempo
+    const qtyVsTimeConfig: ChartConfiguration = {
+        type: 'line',
+        data: {
+            datasets: [
+                {
+                    label: 'Previsto',
+                    data: [{ x: 0, y: 0 }, { x: lot.totalProductionTime / 60, y: lot.totalItems }],
+                    borderColor: 'rgba(255, 159, 64, 0.8)',
+                    tension: 0,
+                    borderDash: [5, 5],
+                },
+                {
+                    label: 'Realizado',
+                    data: [{ x: 0, y: 0 }, { x: lot.totalTimeSpent / 60, y: lot.totalCompletedItems }],
+                    borderColor: 'rgba(153, 102, 255, 0.8)',
+                    backgroundColor: 'rgba(153, 102, 255, 0.2)',
+                    tension: 0,
+                }
+            ]
+        },
+        options: {
+            responsive: false, animation: { duration: 0 },
+            scales: {
+                x: { type: 'linear', position: 'bottom', title: { display: true, text: 'Tempo (horas)' }, beginAtZero: true },
+                y: { beginAtZero: true, title: { display: true, text: 'Quantidade de Peças (un)' } }
+            },
+            plugins: {
+                title: { display: true, text: 'Análise: Quantidade vs. Tempo', font: { size: 14 } },
+                legend: { position: 'top' },
+            }
+        }
+    };
 
-    doc.addPage();
-    doc.setFontSize(16);
-    doc.text('Gráfico de Desempenho', 14, 22);
-    
-    if (lineChartImage) {
-        doc.addImage(lineChartImage, 'PNG', 15, 30, 180, 90);
+    const chart1Image = generateChartImage('chart1', inputVsQtyConfig);
+    if (chart1Image) {
+        doc.addImage(chart1Image, 'PNG', 15, 30, 180, 101); // 16:9 ratio
+        
+        const piecesPer5kg = lot.totalInputUsed > 0 ? (lot.totalCompletedItems / lot.totalInputUsed) * 5 : 0;
+        const legend1Text = `Eficiência Real: ${piecesPer5kg.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} peças a cada 5kg de insumo.`;
+        doc.setFontSize(10);
+        doc.setTextColor(80);
+        doc.text(legend1Text, 15, 30 + 101 + 6);
+    }
+
+    const chart2Image = generateChartImage('chart2', qtyVsTimeConfig);
+    if (chart2Image) {
+        doc.addImage(chart2Image, 'PNG', 15, 145, 180, 101); // 16:9 ratio
+
+        const totalHoursSpent = lot.totalTimeSpent / 60;
+        const piecesPerHour = totalHoursSpent > 0 ? lot.totalCompletedItems / totalHoursSpent : 0;
+        const legend2Text = `Produtividade Real: ${piecesPerHour.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} peças por hora.`;
+        doc.setFontSize(10);
+        doc.setTextColor(80);
+        doc.text(legend2Text, 15, 145 + 101 + 6);
     }
 
     doc.save(`Relatorio-${lot.name.replace(/ /g, '_')}.pdf`);
@@ -225,9 +279,16 @@ const ViewLotModal: React.FC<ViewLotModalProps> = ({ isOpen, onClose, lot, emplo
               </div>
             </div>
             <div className="flex items-center gap-3 bg-gray-700/50 p-3 rounded-lg">
+              <Atom className="text-indigo-400" size={20} />
+              <div>
+                <span className="text-gray-400">Bico Utilizado:</span>
+                <p className="font-semibold text-white">{lot.nozzle?.name || 'Não definido'}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 bg-gray-700/50 p-3 rounded-lg">
               <Zap className="text-orange-400" size={20} />
               <div>
-                <span className="text-gray-400">Insumo Gasto (Real / Total):</span>
+                <span className="text-gray-400">Insumo (Real / Previsto):</span>
                 <p className="font-semibold text-white">{lot.totalInputUsed.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} / {lot.totalInputUsage.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} kg</p>
               </div>
             </div>
@@ -238,7 +299,7 @@ const ViewLotModal: React.FC<ViewLotModalProps> = ({ isOpen, onClose, lot, emplo
                 <p className="font-semibold text-white">{formatMinutes(lot.totalTimeSpent)} / {formatMinutes(lot.totalProductionTime)}</p>
               </div>
             </div>
-            <div className="flex items-center gap-3 bg-gray-700/50 p-3 rounded-lg">
+            <div className="flex items-center gap-3 bg-gray-700/50 p-3 rounded-lg col-span-full">
               <Calendar className="text-green-400" size={20} />
               <div>
                 <span className="text-gray-400">Entrega Estimada:</span>
@@ -259,6 +320,7 @@ const ViewLotModal: React.FC<ViewLotModalProps> = ({ isOpen, onClose, lot, emplo
                   <th className="px-4 py-2">Produto</th>
                   <th className="px-4 py-2 text-center">Progresso (un)</th>
                   <th className="px-4 py-2 text-center">Insumo Real (kg)</th>
+                  <th className="px-4 py-2 text-center">Tempo Real (h)</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-700">
@@ -282,6 +344,16 @@ const ViewLotModal: React.FC<ViewLotModalProps> = ({ isOpen, onClose, lot, emplo
                         step="any"
                         value={progress[p.lot_product_id]?.real_input_usage ?? 0}
                         onChange={(e) => handleProgressChange(p.lot_product_id, 'real_input_usage', e.target.value)}
+                        className="w-24 bg-gray-900 border-gray-600 rounded-md p-1 text-center text-white"
+                        min="0"
+                      />
+                    </td>
+                     <td className="px-4 py-3 text-center">
+                      <input
+                        type="number"
+                        step="any"
+                        value={parseFloat(((progress[p.lot_product_id]?.real_time_spent ?? 0) / 60).toFixed(2))}
+                        onChange={(e) => handleProgressChange(p.lot_product_id, 'real_time_spent', e.target.value)}
                         className="w-24 bg-gray-900 border-gray-600 rounded-md p-1 text-center text-white"
                         min="0"
                       />

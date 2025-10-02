@@ -20,6 +20,7 @@ const Header: React.FC = () => {
             <nav className="flex items-center gap-2">
                 <NavLink to="/" className={navLinkClasses}>Dashboard</NavLink>
                 <NavLink to="/products" className={navLinkClasses}>Produtos</NavLink>
+                <NavLink to="/nozzles" className={navLinkClasses}>Bicos</NavLink>
                 <NavLink to="/employees" className={navLinkClasses}>Funcionários</NavLink>
             </nav>
           </div>

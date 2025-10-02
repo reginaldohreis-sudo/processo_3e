@@ -2,19 +2,20 @@ import { useState } from 'react';
 import LotList from '../components/LotList';
 import ViewLotModal from '../components/ViewLotModal';
 import LotFormModal from '../components/LotFormModal';
-import { Lot, LotStatus, Employee, Product } from '../types';
+import { Lot, LotStatus, Employee, Product, Nozzle } from '../types';
 
 interface DashboardPageProps {
     lots: Lot[];
     employees: Employee[];
     products: Product[];
+    nozzles: Nozzle[];
     onUpdateStatus: (lotId: string, status: LotStatus) => void;
     onSaveLot: (data: any, editingLotId: string | null) => void;
     onDeleteLot: (lotId: string) => void;
-    onUpdateLotProgress: (updates: { id: number; completed_quantity: number; real_input_usage: number }[]) => Promise<void>;
+    onUpdateLotProgress: (updates: { id: number; completed_quantity: number; real_input_usage: number; real_time_spent: number }[]) => Promise<void>;
 }
 
-const DashboardPage: React.FC<DashboardPageProps> = ({ lots, employees, products, onUpdateStatus, onSaveLot, onDeleteLot, onUpdateLotProgress }) => {
+const DashboardPage: React.FC<DashboardPageProps> = ({ lots, employees, products, nozzles, onUpdateStatus, onSaveLot, onDeleteLot, onUpdateLotProgress }) => {
   const [viewingLot, setViewingLot] = useState<Lot | null>(null);
   const [editingLot, setEditingLot] = useState<Lot | null>(null);
   const [isCreatingLot, setIsCreatingLot] = useState(false);
@@ -79,6 +80,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ lots, employees, products
           existingLot={editingLot}
           products={products}
           employees={employees}
+          nozzles={nozzles}
         />
       )}
     </>

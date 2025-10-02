@@ -1,0 +1,88 @@
+import React, { useState } from 'react';
+import { Nozzle } from '../types';
+import { Atom, Edit, Trash2, Plus } from 'lucide-react';
+import NozzleFormModal from '../components/NozzleFormModal';
+
+interface NozzlesPageProps {
+  nozzles: Nozzle[];
+  onSave: (nozzleData: Omit<Nozzle, 'id'>, editingNozzleId: string | null) => Promise<void>;
+  onDelete: (nozzleId: string) => Promise<void>;
+}
+
+const NozzlesPage: React.FC<NozzlesPageProps> = ({ nozzles, onSave, onDelete }) => {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingNozzle, setEditingNozzle] = useState<Nozzle | null>(null);
+
+  const handleOpenModal = (nozzle: Nozzle | null = null) => {
+    setEditingNozzle(nozzle);
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setEditingNozzle(null);
+    setIsModalOpen(false);
+  };
+
+  const handleSave = async (data: Omit<Nozzle, 'id'>) => {
+    await onSave(data, editingNozzle?.id || null);
+    handleCloseModal();
+  };
+
+  return (
+    <div className="space-y-8">
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold text-white">Gerenciar Bicos (Ferramentas)</h2>
+        <button
+          onClick={() => handleOpenModal()}
+          className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white font-semibold px-4 py-2 rounded-lg transition-colors"
+        >
+          <Plus size={20} />
+          Adicionar Bico
+        </button>
+      </div>
+
+      <div className="bg-gray-800 border border-gray-700 rounded-xl">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-left text-gray-400">
+            <thead className="text-xs text-gray-400 uppercase bg-gray-700/50">
+              <tr>
+                <th scope="col" className="px-6 py-3">Nome do Bico</th>
+                <th scope="col" className="px-6 py-3 text-center">Vazão (g/s)</th>
+                <th scope="col" className="px-6 py-3 text-right">Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {nozzles.map(nozzle => (
+                <tr key={nozzle.id} className="border-b border-gray-700 hover:bg-gray-700/30">
+                  <th scope="row" className="px-6 py-4 font-medium text-gray-200 whitespace-nowrap">
+                    {nozzle.name}
+                  </th>
+                  <td className="px-6 py-4 text-center">{nozzle.flow_rate.toLocaleString('pt-BR')} g/s</td>
+                  <td className="px-6 py-4 text-right space-x-2">
+                    <button onClick={() => handleOpenModal(nozzle)} className="p-2 text-gray-400 hover:text-blue-400"><Edit size={16} /></button>
+                    <button onClick={() => onDelete(nozzle.id)} className="p-2 text-gray-400 hover:text-red-400"><Trash2 size={16} /></button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {nozzles.length === 0 && (
+            <div className="text-center py-16">
+                <Atom size={40} className="mx-auto text-gray-600" />
+                <p className="mt-2 text-gray-500">Nenhum bico cadastrado.</p>
+            </div>
+        )}
+      </div>
+
+      <NozzleFormModal
+        isOpen={isModalOpen}
+        onClose={handleCloseModal}
+        onSave={handleSave}
+        existingNozzle={editingNozzle}
+      />
+    </div>
+  );
+};
+
+export default NozzlesPage;
